@@ -3,6 +3,7 @@ import numpy as np
 from cv2 import cv2
 import math
 import os
+import time
 
 # https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_video/py_lucas_kanade/py_lucas_kanade.html
 
@@ -58,21 +59,6 @@ def flowWithFrames(frame1, frame2):
     flow = cv2.calcOpticalFlowFarneback(prevF,nextF, None, 0.5, 3, 15, 3, 5, 1.2, 0)
     return flow
 
-def imgAddBlur(src1, src2, mask):
-    # shape = src1.shape
-    res = src1.copy()
-    mask3 = mask.astype(np.float)
-    locations = np.where(mask3 > 0)
-
-    val = mask3[locations]
-    percent = val * 2 / 255.0
-    percent[percent > 1] = 1
-    percent = percent.reshape(-1, 1)
-    po = src1[locations]
-    pd = src2[locations]
-    res[locations] = po * (1 - percent) + pd * percent
-    return res
-
 def motionBlurWithFrames(frame1, frame2):
     flow = flowWithFrames(frame1, frame2)
     mag, ang = cv2.cartToPolar(flow[...,0], flow[...,1])
@@ -82,8 +68,8 @@ def motionBlurWithFrames(frame1, frame2):
     test_height = int(frame1.shape[0] / test_round_y)
     # res = np.zeros_like(frame1)
     res = frame1.copy()
-    emptymask = np.zeros_like(frame1)
-    emptymask = cv2.cvtColor(emptymask, cv2.COLOR_BGR2GRAY)
+    rows, cols, _ = frame1.shape
+    emptymask = np.zeros((rows, cols, 1))
     # mask = emptymask.copy()
     for in_x in range(test_round_x):
         for in_y in range(test_round_y):
@@ -102,20 +88,26 @@ def motionBlurWithFrames(frame1, frame2):
             ang_roi_flat = ang[starty:endy, startx:endx].flatten()
             ang_using = int(np.average(ang_roi_flat[mag_roi_flat > (mag_max - 1)]))
             kernel = blurKernel(length = mag_using, angle = ang_using)
-            blur_ro = cv2.filter2D(frame1,-1,kernel)
+            blur_roi = cv2.filter2D(frame1,-1,kernel)
             
             blurmask = emptymask.copy()
-            blurmask[starty:endy, startx:endx, ...] = 255
+            blurmask[starty:endy, startx:endx] = 1
             blurmask = cv2.filter2D(blurmask, -1, kernel)
             
-            res = imgAddBlur(res, blur_ro, blurmask)
-            print('rounds: {},{}'.format(in_x, in_y))
+            # draw the blur
+            locations = np.where(blurmask > 0)
+            val = blurmask[locations]# * 2
+            # val[val > 1] = 1
+            val = val.reshape(-1, 1)
+            res[locations] = res[locations] * (1 - val) + blur_roi[locations] * val
+            # print('rounds: {},{}'.format(in_x, in_y))
     return res
 
 def blurVideo():
     print("start")
-    input = 'resource/testtre.mp4'
-    output = 'test.mp4'
+    timestring = time.strftime('%Y%m%d_%H%M%S')
+    input = '/Users/jam/Desktop/test_car.mp4'
+    output = '/Users/jam/Desktop/testres{}.mp4'.format(timestring)
     cap = cv2.VideoCapture(input)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
