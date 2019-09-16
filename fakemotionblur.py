@@ -56,14 +56,15 @@ def flowWithFrames(frame1, frame2):
     prevF = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
     nextF = cv2.cvtColor(frame2,cv2.COLOR_BGR2GRAY)
     # flow 为每一个像素点的偏移
-    flow = cv2.calcOpticalFlowFarneback(prevF,nextF, None, 0.5, 3, 15, 3, 5, 1.2, 0)
+    flow = cv2.calcOpticalFlowFarneback(prevF,nextF, None, 0.5, 3, 15, 10, 5, 1.2, 0)
     return flow
 
 def motionBlurWithFrames(frame1, frame2):
     flow = flowWithFrames(frame1, frame2)
     mag, ang = cv2.cartToPolar(flow[...,0], flow[...,1])
-    test_round_x = 24
-    test_round_y = test_round_x / 2
+    ang = ang * 180.0 / math.pi # 这原本是弧度！
+    test_round_x = 40
+    test_round_y = int(test_round_x / 2)
     test_width = int(frame1.shape[1] / test_round_x)
     test_height = int(frame1.shape[0] / test_round_y)
     # res = np.zeros_like(frame1)
@@ -81,12 +82,12 @@ def motionBlurWithFrames(frame1, frame2):
             mag_roi_flat = mag[starty:endy, startx:endx].flatten()
             mag_max = int(mag_roi_flat.max())
             mag_using = int(np.average(mag_roi_flat[mag_roi_flat > (mag_max - 1)]))
-            mag_using = mag_using / 2
-            if mag_using < 1:
+            if mag_using < 2:
                 continue
 
             ang_roi_flat = ang[starty:endy, startx:endx].flatten()
             ang_using = int(np.average(ang_roi_flat[mag_roi_flat > (mag_max - 1)]))
+            mag_using = mag_using / 2
             kernel = blurKernel(length = mag_using, angle = ang_using)
             blur_roi = cv2.filter2D(frame1,-1,kernel)
             
@@ -96,8 +97,8 @@ def motionBlurWithFrames(frame1, frame2):
             
             # draw the blur
             locations = np.where(blurmask > 0)
-            val = blurmask[locations]# * 2
-            # val[val > 1] = 1
+            val = blurmask[locations] * 2
+            val[val > 1] = 1
             val = val.reshape(-1, 1)
             res[locations] = res[locations] * (1 - val) + blur_roi[locations] * val
             # print('rounds: {},{}'.format(in_x, in_y))
@@ -148,5 +149,5 @@ def testImages():
     cv2.destroyAllWindows()
 
 if __name__ == "__main__":
-    blurVideo()
-    # testImages()
+    # blurVideo()
+    testImages()
