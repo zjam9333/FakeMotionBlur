@@ -52,6 +52,102 @@ def testBlur(img):
         cv2.waitKey(0)
         cv2.destroyWindow(winname)
 
+def drawRegionBlur(src, dsc, region, mag, ang, maskvalue = 1): # this will change dsc
+    starty, endy, startx, endx = region
+    rows, cols, _ = src.shape
+    if mag < 2:
+        return dsc
+    kernel = blurKernel(length = mag, angle = ang)
+    krows, kcols = kernel.shape
+    blur_startx = startx - kcols if startx - kcols >= 0 else 0
+    blur_endx = endx + kcols if endx + kcols <= cols else cols
+    blur_starty = starty - krows if starty - krows >= 0 else 0
+    blur_endy = endy + krows if endy + krows <= rows else rows
+
+    blur_roi = cv2.filter2D(src[blur_starty:blur_endy, blur_startx:blur_endx],-1,kernel)
+    
+    blurmask = np.zeros((rows, cols, 1))
+    blurmask[starty:endy, startx:endx] = maskvalue
+    blur_roi_mask = cv2.filter2D(blurmask[blur_starty:blur_endy, blur_startx:blur_endx], -1, kernel)
+    
+    # draw the blur
+    dsc_roi = dsc[blur_starty:blur_endy, blur_startx:blur_endx]
+    locations = np.where(blur_roi_mask > 0)
+    val = blur_roi_mask[locations]
+    val[val > 1] = 1
+    val = val.reshape(-1, 1)
+    dsc_roi[locations] = dsc_roi[locations] * (1 - val) + blur_roi[locations] * val
+    dsc[blur_starty:blur_endy, blur_startx:blur_endx] = dsc_roi
+    return dsc
+
+
+test_round_x = 40
+test_round_y = int(test_round_x / 2)
+# round_x_progress = tqdm(range(test_round_x), leave=True)
+
+def roughlyBlur(src, dsc, allflow, fps = 30):
+    # print("roughly blur drawing")
+    mag, ang = cv2.cartToPolar(allflow[...,0], allflow[...,1])
+    if fps > 30:
+        scale = float(fps) / 30.0
+        mag = mag * scale
+    ang = -ang * 180.0 / math.pi # 这原本是弧度！
+    rows, cols, _ = src.shape
+    test_width = int(cols / test_round_x)
+    test_height = int(rows / test_round_y)
+    # round_x_progress.reset(total=test_round_x)
+    for in_x in range(test_round_x): #round_x_progress:
+        # round_x_progress.set_description('roughly blur drawing')
+        for in_y in range(test_round_y):
+            startx = in_x * test_width
+            endx = startx + test_width
+            starty = in_y * test_height
+            endy = starty + test_height
+
+            mag_roi_flat = mag[starty:endy, startx:endx].flatten()
+            mag_max = int(mag_roi_flat.max())
+            mag_using = int(np.average(mag_roi_flat[mag_roi_flat > (mag_max - 1)]))
+            ang_roi_flat = ang[starty:endy, startx:endx].flatten()
+            ang_using = int(np.average(ang_roi_flat[mag_roi_flat > (mag_max - 1)]))
+
+            region = (starty, endy, startx, endx)
+            drawRegionBlur(src=src, dsc=dsc, region=region, mag=mag_using, ang=ang_using, maskvalue=0.9)
+    return dsc
+
+def carefullyBlur(src, dsc, points, vectors):
+    print('carefully blur drawing')
+    rows, cols, _ = src.shape
+    # zipedpoints = zip(points, vectors)
+    rangepoints = tqdm(range(points.shape[0]))
+    drawradius = 10
+    for i in rangepoints:
+        poi = points[i]
+        vec = vectors[i]
+        # print(poi, vec)
+        mag, ang = cv2.cartToPolar(vec[0], vec[1])
+        ang = -ang * 180.0 / math.pi # 这原本是弧度！
+        mag_using = mag[0]
+        ang_using = ang[0]
+
+        ix = 0
+        iy = 1
+        startx = poi[ix] - drawradius
+        endx = poi[ix] + drawradius
+        starty = poi[iy] - drawradius
+        endy = poi[iy] + drawradius
+        if startx < 0:
+            startx = 0
+        if endx > cols - 1:
+            endx = cols - 1
+        if starty < 0:
+            starty = 0
+        if endy > rows - 1:
+            endy = rows - 1
+
+        region = (starty, endy, startx, endx)
+        drawRegionBlur(src=src, dsc=dsc, region=region, mag=mag_using, ang=ang_using)
+    return dsc
+
 maxCorners = 50000
 color = np.random.randint(128,255,(maxCorners,3))
 
@@ -60,7 +156,7 @@ def flowLucasWithFrames(frame1, frame2):
     prevF = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
     nextF = cv2.cvtColor(frame2,cv2.COLOR_BGR2GRAY)
     rows, cols, _ = frame1.shape
-    somesize = int(cols / 30)
+    somesize = int(cols / 20)
     trackingImage = prevF
     p0 = cv2.goodFeaturesToTrack(image = trackingImage, maxCorners = maxCorners, qualityLevel = 0.01, minDistance = 1, blockSize = 5)
     p1, st, _ = cv2.calcOpticalFlowPyrLK(prevImg = prevF, nextImg = nextF, prevPts = p0, nextPts = None, winSize = (somesize, somesize), maxLevel = 10)
@@ -71,160 +167,43 @@ def flowLucasWithFrames(frame1, frame2):
     goodxy = good_p1-good_p0
     allxy = np.zeros((rows, cols, 2))
     allxy[good_p0[...,1], good_p0[...,0]] = goodxy
-    allxy = allxy
-    mag, ang = cv2.cartToPolar(allxy[...,0], allxy[...,1])
-    ang = -ang * 180.0 / math.pi # 这原本是弧度！
+    # allxy = allxy
+
+    res = frame1.copy()
+    for i,(old,new) in enumerate(zip(good_p0, good_p1)):
+        a,b = new.ravel()
+        c,d = old.ravel()
+        res = cv2.line(res, (a,b),(c,d), color[i].tolist(), 1)
+        # img = cv2.circle(img,(a,b),5,color[i].tolist(),-1)
+        res = cv2.circle(res,(c,d),2,color[i].tolist(),-1)
+    cv2.imshow('flow', res)
+    cv2.waitKey(1)
     
-    print("drawing")
     res = frame1.copy()
-    # for i,(old,new) in enumerate(zip(good_p0, good_p1)):
-    #     a,b = new.ravel()
-    #     c,d = old.ravel()
-    #     res = cv2.line(res, (a,b),(c,d), color[i].tolist(), 2)
-    #     # img = cv2.circle(img,(a,b),5,color[i].tolist(),-1)
-    #     res = cv2.circle(res,(c,d),5,color[i].tolist(),-1)
-
-    test_round_x = 24
-    test_round_y = int(test_round_x / 2)
-    test_width = int(frame1.shape[1] / test_round_x)
-    test_height = int(frame1.shape[0] / test_round_y)
-    # res = np.zeros_like(frame1)
-    res = frame1.copy()
-    rows, cols, _ = frame1.shape
-    emptymask = np.zeros((rows, cols, 1))
-    # mask = emptymask.copy()
-    round_x_progress = tqdm(range(test_round_x))
-    for in_x in round_x_progress:
-        for in_y in range(test_round_y):
-            startx = in_x * test_width
-            endx = startx + test_width
-            starty = in_y * test_height
-            endy = starty + test_height
-
-            mag_roi_flat = mag[starty:endy, startx:endx].flatten()
-            mag_max = int(mag_roi_flat.max())
-            mag_using = int(np.average(mag_roi_flat[mag_roi_flat > (mag_max - 1)]))
-            if mag_using < 2:
-                continue
-
-            ang_roi_flat = ang[starty:endy, startx:endx].flatten()
-            ang_using = int(np.average(ang_roi_flat[mag_roi_flat > (mag_max - 1)]))
-            mag_using = mag_using / 2
-            kernel = blurKernel(length = mag_using, angle = ang_using)
-            blur_roi = cv2.filter2D(frame1,-1,kernel)
-            
-            blurmask = emptymask.copy()
-            blurmask[starty:endy, startx:endx] = 1
-            blurmask = cv2.filter2D(blurmask, -1, kernel)
-            
-            # draw the blur
-            locations = np.where(blurmask > 0)
-            val = blurmask[locations] * 3
-            val[val > 1] = 1
-            val = val.reshape(-1, 1)
-            res[locations] = res[locations] * (1 - val) + blur_roi[locations] * val
-            # print('rounds: {},{}'.format(in_x, in_y))
-    # return res
-
-    print("done")
-    name = 'lk'
-    cv2.namedWindow(name, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(name, 640, 480)
-    cv2.imshow(name, res)
-    cv2.waitKey(0)
-    cv2.destroyWindow('lk')
-
-    
-
-def flowFarneWithFrames(frame1, frame2):
-    # 必须转灰图
-    prevF = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
-    nextF = cv2.cvtColor(frame2,cv2.COLOR_BGR2GRAY)
-    # flow 为每一个像素点的偏移
-    flow = cv2.calcOpticalFlowFarneback(prevF,nextF, None, 0.5, 3, 15, 10, 5, 1.2, 0)
-    return flow
-
-def motionBlurWithFrames(frame1, frame2):
-    flow = flowFarneWithFrames(frame1, frame2)
-    mag, ang = cv2.cartToPolar(flow[...,0], flow[...,1])
-    ang = ang * 180.0 / math.pi # 这原本是弧度！
-    test_round_x = 100
-    test_round_y = int(test_round_x / 2)
-    test_width = int(frame1.shape[1] / test_round_x)
-    test_height = int(frame1.shape[0] / test_round_y)
-    # res = np.zeros_like(frame1)
-    res = frame1.copy()
-    rows, cols, _ = frame1.shape
-    emptymask = np.zeros((rows, cols, 1))
-    # mask = emptymask.copy()
-    round_x_progress = tqdm(range(test_round_x))
-    for in_x in round_x_progress:
-        for in_y in range(test_round_y):
-            startx = in_x * test_width
-            endx = startx + test_width
-            starty = in_y * test_height
-            endy = starty + test_height
-
-            mag_roi_flat = mag[starty:endy, startx:endx].flatten()
-            mag_max = int(mag_roi_flat.max())
-            mag_using = int(np.average(mag_roi_flat[mag_roi_flat > (mag_max - 1)]))
-            if mag_using < 2:
-                continue
-
-            ang_roi_flat = ang[starty:endy, startx:endx].flatten()
-            ang_using = int(np.average(ang_roi_flat[mag_roi_flat > (mag_max - 1)]))
-            mag_using = mag_using / 2
-            kernel = blurKernel(length = mag_using, angle = ang_using)
-            blur_roi = cv2.filter2D(frame1,-1,kernel)
-            
-            blurmask = emptymask.copy()
-            blurmask[starty:endy, startx:endx] = 1
-            blurmask = cv2.filter2D(blurmask, -1, kernel)
-            
-            # draw the blur
-            locations = np.where(blurmask > 0)
-            val = blurmask[locations] * 3
-            val[val > 1] = 1
-            val = val.reshape(-1, 1)
-            res[locations] = res[locations] * (1 - val) + blur_roi[locations] * val
-            # print('rounds: {},{}'.format(in_x, in_y))
+    res = roughlyBlur(src=frame1, dsc=res, allflow=allxy)
+    res = carefullyBlur(src=frame1, dsc=res, points=good_p0, vectors=goodxy)
     return res
 
-def blurVideo():
-    print("start")
-    timestring = time.strftime('%Y%m%d_%H%M%S')
-    input = '/Users/jam/Desktop/test_car.mp4'
-    output = '/Users/jam/Desktop/testres{}.mp4'.format(timestring)
-    cap = cv2.VideoCapture(input)
-    width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-    height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    fps = cap.get(cv2.CAP_PROP_FPS)
-    framecount = cap.get(cv2.CAP_PROP_FRAME_COUNT)
-    cacheVideoName = "cachevideo.mp4"
-    cc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(cacheVideoName, cc, fps, (width, height))
-    lastframe = np.array([])
-    currentframeindex = 0
-    while cap.isOpened():
-        ret, frame = cap.read()
-        if ret == False:
-            break
-        if lastframe.any():
-            thisframe = motionBlurWithFrames(lastframe, frame)
-            out.write(thisframe)
-        else:
-            out.write(frame)
-        lastframe = frame
-        print('progress:{}/{}'.format(currentframeindex, framecount))
-        currentframeindex += 1
-    cap.release()
-    out.release()
-    ffmpegcommand = "ffmpeg -i {} -i {} -map 0:v -map 1:a -c:v libx264 -c:a copy {}".format(cacheVideoName, input, output)
-    print('command: {}'.format(ffmpegcommand))
-    os.system(ffmpegcommand)
-    print("cleaning cache")
-    os.system("rm -rf {}".format(cacheVideoName))
-    print("end")
+def flowFarnebackWithFrames(frame1, frame2, fps = 30):
+    prevF = cv2.cvtColor(frame1,cv2.COLOR_BGR2GRAY)
+    nextF = cv2.cvtColor(frame2,cv2.COLOR_BGR2GRAY)
+    _, cols, _ = frame1.shape
+    somesize = int(cols / 30)
+    # flow 为每一个像素点的偏移
+    flow = cv2.calcOpticalFlowFarneback(prev=prevF, next=nextF, flow=None, pyr_scale=0.5, levels=10, winsize=somesize, iterations=10, poly_n=5, poly_sigma=1.2, flags=0)
+    res = frame1.copy()
+    res = roughlyBlur(src=frame1, dsc=res, allflow=flow, fps=fps)
+    return res
+
+def simpleAddWithFrames(frame1, frame2):
+    # hsv1 = cv2.cvtColor(frame1, cv2.COLOR_BGR2HSV)
+    # hsv2 = cv2.cvtColor(frame2, cv2.COLOR_BGR2HSV)
+    # val1 = hsv1[:,:,2]
+    # val2 = hsv2[:,:,2]
+    # where = np.where(val1 < val2)
+    # hsv1[where] = hsv2[where]
+    # return cv2.cvtColor(hsv1, cv2.COLOR_HSV2BGR)
+    return cv2.addWeighted(frame1, 0.5, frame2, 0.5, 1)
 
 def testImages():
     frame1 = cv2.imread('resource/test1.jpg')
@@ -234,10 +213,19 @@ def testImages():
     # cv2.waitKey(0)
     # cv2.destroyAllWindows()
     # test
-    imgsize = (1920, 1080)
+    imgsize = (1280, 720)
     frame1 = cv2.resize(frame1, imgsize)
     frame2 = cv2.resize(frame2, imgsize)
-    flowLucasWithFrames(frame1, frame2)
+    # res = flowLucasWithFrames(frame1, frame2)
+    res = flowFarnebackWithFrames(frame1, frame2)
+    # res = simpleAddWithFrames(frame1, frame2)
+
+    name = 'blur'
+    cv2.namedWindow(name, cv2.WINDOW_NORMAL)
+    cv2.resizeWindow(name, 1280, 720)
+    cv2.imshow(name, res)
+    cv2.waitKey(0)
+    cv2.destroyWindow(name)
 
 if __name__ == "__main__":
     # blurVideo()
