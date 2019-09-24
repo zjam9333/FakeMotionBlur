@@ -28,21 +28,23 @@ def blurKernel(length, angle):
         for y in range(0, size_h):
             realx = x - center_x
             realy = y - center_y
+            powe = 1
             if biggerthan45:
                 calx = realy / sinalpha * cosalpha
-                value = 1 if math.fabs(calx - realx) <= 2 else 0
+                value = powe if math.fabs(calx - realx) <= 2 else 0
             else:
                 caly = realx / cosalpha * sinalpha
-                value = 1 if math.fabs(caly - realy) <= 2 else 0
-            if value == 1:
-                total += 1
+                value = powe if math.fabs(caly - realy) <= 2 else 0
+            if value > 0:
+                total += value
             kernel[y,x] = value
     if total > 0:
         kernel = kernel / total
     kernel = np.flipud(kernel) # 翻转kernel为正
     return kernel
 
-def testBlur(img):
+def testBlur():
+    img = cv2.imread('resource/one1.png')
     for ang in range(-360, 360, 15):
         kernel=blurKernel(length = 20, angle = ang)
         motion_blur=cv2.filter2D(img,-1,kernel)
@@ -87,11 +89,9 @@ test_round_y = int(test_round_x / 2)
 
 def roughlyBlur(src, dsc, allflow, fps = 30):
     # print("roughly blur drawing")
-    mag, ang = cv2.cartToPolar(allflow[...,0], allflow[...,1])
+    scale = 1.0
     if fps > 30:
         scale = float(fps) / 30.0
-        mag = mag * scale
-    ang = -ang * 180.0 / math.pi # 这原本是弧度！
     rows, cols, _ = src.shape
     test_width = int(cols / test_round_x)
     test_height = int(rows / test_round_y)
@@ -104,14 +104,19 @@ def roughlyBlur(src, dsc, allflow, fps = 30):
             starty = in_y * test_height
             endy = starty + test_height
 
-            mag_roi_flat = mag[starty:endy, startx:endx].flatten()
-            mag_max = int(mag_roi_flat.max())
-            mag_using = int(np.average(mag_roi_flat[mag_roi_flat > (mag_max - 1)]))
-            ang_roi_flat = ang[starty:endy, startx:endx].flatten()
-            ang_using = int(np.average(ang_roi_flat[mag_roi_flat > (mag_max - 1)]))
+            flow_roi = allflow[starty:endy, startx:endx]
+            flow_avg_0 = np.array((np.average(flow_roi[...,0])))
+            flow_avg_1 = np.array((np.average(flow_roi[...,1])))
+            mag, ang = cv2.cartToPolar(flow_avg_0, flow_avg_1)
+            if mag < 2:
+                continue
+            mag = mag * scale
+            ang = -ang * 180.0 / math.pi # 这原本是弧度！
+            mag_using = mag[0,0]
+            ang_using = ang[0,0]
 
             region = (starty, endy, startx, endx)
-            drawRegionBlur(src=src, dsc=dsc, region=region, mag=mag_using, ang=ang_using, maskvalue=0.9)
+            drawRegionBlur(src=src, dsc=dsc, region=region, mag=mag_using, ang=ang_using, maskvalue=1)
     return dsc
 
 def carefullyBlur(src, dsc, points, vectors):
@@ -217,12 +222,12 @@ def testImages():
     frame1 = cv2.resize(frame1, imgsize)
     frame2 = cv2.resize(frame2, imgsize)
     # res = flowLucasWithFrames(frame1, frame2)
-    res = flowFarnebackWithFrames(frame1, frame2)
+    res = flowFarnebackWithFrames(frame1, frame2, fps = 60)
     # res = simpleAddWithFrames(frame1, frame2)
 
     name = 'blur'
     cv2.namedWindow(name, cv2.WINDOW_NORMAL)
-    cv2.resizeWindow(name, 1280, 720)
+    cv2.resizeWindow(name, 640, 480)
     cv2.imshow(name, res)
     cv2.waitKey(0)
     cv2.destroyWindow(name)
@@ -230,3 +235,4 @@ def testImages():
 if __name__ == "__main__":
     # blurVideo()
     testImages()
+    # testBlur()

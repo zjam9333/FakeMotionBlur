@@ -8,9 +8,8 @@ from tqdm import tqdm
 
 def handlevideo(inputpath, outputpath):
     print("start")
-    timestring = time.strftime('%Y%m%d_%H%M%S')
-    input = '/Users/zjj/Downloads/C00532_30.mp4'
-    output = '/Users/zjj/Downloads/C0049_{}.mp4'.format(timestring)
+    input = '/Users/zjj/Downloads/out8.mp4'
+    
     cap = cv2.VideoCapture(input)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
@@ -29,7 +28,7 @@ def handlevideo(inputpath, outputpath):
             break
         if lastframe.any():
             # using a blur method from other module
-            thisframe = fakemotionblur.flowFarnebackWithFrames(lastframe, frame)
+            thisframe = fakemotionblur.flowFarnebackWithFrames(lastframe, frame, fps)
             out.write(thisframe)
         else:
             out.write(frame)
@@ -38,6 +37,9 @@ def handlevideo(inputpath, outputpath):
         currentframeindex += 1
     cap.release()
     out.release()
+
+    timestring = time.strftime('%Y%m%d_%H%M%S')
+    output = '/Users/zjj/Downloads/out_crop_{}.mp4'.format(timestring)
     ffmpegcommand = "ffmpeg -i {} -i {} -map 0:v -map 1:a -c:v libx264 -c:a copy -r 30 {}".format(cacheVideoName, input, output)
     print('command: {}'.format(ffmpegcommand))
     os.system(ffmpegcommand)
