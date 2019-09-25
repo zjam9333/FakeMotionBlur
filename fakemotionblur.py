@@ -61,10 +61,10 @@ def drawRegionBlur(src, dsc, region, mag, ang, maskvalue = 1): # this will chang
         return dsc
     kernel = blurKernel(length = mag, angle = ang)
     krows, kcols = kernel.shape
-    blur_startx = startx - kcols if startx - kcols >= 0 else 0
-    blur_endx = endx + kcols if endx + kcols <= cols else cols
-    blur_starty = starty - krows if starty - krows >= 0 else 0
-    blur_endy = endy + krows if endy + krows <= rows else rows
+    blur_startx = startx - kcols if startx - kcols > 0 else 0
+    blur_endx = endx + kcols if endx + kcols < cols else cols
+    blur_starty = starty - krows if starty - krows > 0 else 0
+    blur_endy = endy + krows if endy + krows < rows else rows
 
     blur_roi = cv2.filter2D(src[blur_starty:blur_endy, blur_startx:blur_endx],-1,kernel)
     
@@ -83,8 +83,9 @@ def drawRegionBlur(src, dsc, region, mag, ang, maskvalue = 1): # this will chang
     return dsc
 
 
-test_round_x = 40
+test_round_x = 36 #40
 test_round_y = int(test_round_x / 2)
+shouldprintblurprogress = False
 # round_x_progress = tqdm(range(test_round_x), leave=True)
 
 def roughlyBlur(src, dsc, allflow, fps = 30):
@@ -95,14 +96,25 @@ def roughlyBlur(src, dsc, allflow, fps = 30):
     rows, cols, _ = src.shape
     test_width = int(cols / test_round_x)
     test_height = int(rows / test_round_y)
+    test_x = 0
     # round_x_progress.reset(total=test_round_x)
-    for in_x in range(test_round_x): #round_x_progress:
+    while test_x < cols: #round_x_progress:
         # round_x_progress.set_description('roughly blur drawing')
-        for in_y in range(test_round_y):
-            startx = in_x * test_width
-            endx = startx + test_width
-            starty = in_y * test_height
-            endy = starty + test_height
+        startx = test_x
+        endx = startx + test_width if startx + test_width < cols else cols
+        test_x = endx
+        if startx == endx:
+            break 
+        test_y = 0
+
+        while test_y < rows:
+            if shouldprintblurprogress:
+                print("test", test_x, test_y)
+            starty = test_y
+            endy = starty + test_height if starty + test_height < rows else rows
+            test_y = endy
+            if starty == endy:
+                break
 
             flow_roi = allflow[starty:endy, startx:endx]
             flow_avg_0 = np.array((np.average(flow_roi[...,0])))
@@ -116,7 +128,7 @@ def roughlyBlur(src, dsc, allflow, fps = 30):
             ang_using = ang[0,0]
 
             region = (starty, endy, startx, endx)
-            drawRegionBlur(src=src, dsc=dsc, region=region, mag=mag_using, ang=ang_using, maskvalue=1)
+            drawRegionBlur(src=src, dsc=dsc, region=region, mag=mag_using, ang=ang_using, maskvalue=1.5)
     return dsc
 
 def carefullyBlur(src, dsc, points, vectors):
@@ -233,6 +245,7 @@ def testImages():
     cv2.destroyWindow(name)
 
 if __name__ == "__main__":
+    shouldprintblurprogress = True
     # blurVideo()
     testImages()
     # testBlur()
