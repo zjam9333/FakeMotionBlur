@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 def handlevideo(inputpath, outputpath):
     print("start")
-    input = '/Users/zjj/Downloads/fly1.mp4'
+    input = '/Users/jam/Desktop/fly2_30.MP4'
     
     cap = cv2.VideoCapture(input)
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
@@ -19,7 +19,7 @@ def handlevideo(inputpath, outputpath):
     cc = cv2.VideoWriter_fourcc(*'mp4v')
     out = cv2.VideoWriter(cacheVideoName, cc, fps, (width, height))
     lastframe = np.array([])
-    currentframeindex = 0
+    # currentframeindex = 0
     rangeframecount = tqdm(range(int(framecount)))
     for _ in rangeframecount:
         rangeframecount.set_description('frame progressing')
@@ -27,19 +27,24 @@ def handlevideo(inputpath, outputpath):
         if ret == False:
             break
         if lastframe.any():
-            # using a blur method from other module
             thisframe = fakemotionblur.flowFarnebackWithFrames(lastframe, frame, fps)
             out.write(thisframe)
         else:
-            out.write(frame)
+            ret, framenext = cap.read()
+            if ret == False:
+                break
+            thisframe = fakemotionblur.flowFarnebackWithFrames(frame, framenext, fps)
+            out.write(thisframe)
+            nextframe = fakemotionblur.flowFarnebackWithFrames(framenext, frame, fps)
+            out.write(nextframe)
         lastframe = frame
         # print('progress:{}/{}'.format(currentframeindex, framecount))
-        currentframeindex += 1
+        # currentframeindex += 1
     cap.release()
     out.release()
 
     timestring = time.strftime('%Y%m%d_%H%M%S')
-    output = '/Users/zjj/Downloads/fakemotionblur_output_{}.mp4'.format(timestring)
+    output = '/Users/jam/Desktop/fly1MP4_{}.mp4'.format(timestring)
     ffmpegcommand = "ffmpeg -i {} -i {} -map 0:v -map 1:a -c:v libx264 -c:a copy -r 30 {}".format(cacheVideoName, input, output)
     print('command: {}'.format(ffmpegcommand))
     os.system(ffmpegcommand)
