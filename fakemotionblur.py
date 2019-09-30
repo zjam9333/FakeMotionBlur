@@ -5,6 +5,7 @@ import math
 import os
 import time
 from tqdm import tqdm
+import random
 
 # https://opencv-python-tutroals.readthedocs.io/en/latest/py_tutorials/py_video/py_lucas_kanade/py_lucas_kanade.html
 
@@ -112,8 +113,6 @@ def roughlyBlur(src, dsc, allflow, fps = 30):
         test_y = 0
 
         while test_y < rows:
-            # if shouldprintblurprogress:
-            #     print("test", test_x, test_y)
             starty = test_y
             endy = starty + test_height if starty + test_height < rows else rows
             test_y = endy
@@ -124,7 +123,7 @@ def roughlyBlur(src, dsc, allflow, fps = 30):
             flow_avg_0 = np.array((np.average(flow_roi[...,0])))
             flow_avg_1 = np.array((np.average(flow_roi[...,1])))
             mag, ang = cv2.cartToPolar(flow_avg_0, flow_avg_1)
-            mag = mag * scale / 2.0
+            mag = (mag * scale) #/ 2.0
             ang = -ang * 180.0 / math.pi # 这原本是弧度！
             mag_using = mag[0,0]
             ang_using = ang[0,0]
@@ -133,8 +132,13 @@ def roughlyBlur(src, dsc, allflow, fps = 30):
             item = (region, mag_using, ang_using)
             arr.append(item)
     sortedarr = sorted(arr, key=lambda iii: iii[1], reverse=True)
-    for item in sortedarr:
-        region, mag, ang = item
+    count = len(sortedarr)
+    for index in range(count):
+        if shouldprintblurprogress and (random.randint(1,50) % 10) == 0:
+            print("test", index, count)
+        region, mag, ang = sortedarr[index]
+        if math.isinf(mag):
+            continue
         drawRegionBlur(src=src, dsc=dsc, region=region, mag=mag, ang=ang, maskvalue=1.5)
     return dsc
 
@@ -150,8 +154,8 @@ def flowFarnebackWithFrames(frame1, frame2, fps = 30):
     return res
 
 def testImages():
-    frame1 = cv2.imread('resource/test1.jpg')
-    frame2 = cv2.imread('resource/test2.jpg')
+    frame1 = cv2.imread('resource/fly1.jpg')
+    frame2 = cv2.imread('resource/fly2.jpg')
     # res = motionBlurWithFrames(frame1, frame2)
     # cv2.imshow('blr', res)
     # cv2.waitKey(0)
@@ -161,7 +165,7 @@ def testImages():
     frame1 = cv2.resize(frame1, imgsize)
     frame2 = cv2.resize(frame2, imgsize)
     # res = flowLucasWithFrames(frame1, frame2)
-    res = flowFarnebackWithFrames(frame1, frame2, fps = 60)
+    res = flowFarnebackWithFrames(frame1, frame2, fps = 30)
     # res = simpleAddWithFrames(frame1, frame2)
 
     name = 'blur'
