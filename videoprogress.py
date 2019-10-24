@@ -42,7 +42,7 @@ def handlevideo(inputpath, outputpath):
 
     timestring = time.strftime('%Y%m%d_%H%M%S')
     output = '/Users/zjj/Downloads/ly1MP4_{}.mp4'.format(timestring)
-    ffmpegcommand = "ffmpeg -i {} -i {} -map 0:v -map 1:a -c:v libx264 -c:a copy -r 30 {}".format(cacheVideoName, input, output)
+    ffmpegcommand = "ffmpeg -i {} -i {} -map 0:v -map 1:a {}".format(cacheVideoName, input, output)
     print('command: {}'.format(ffmpegcommand))
     os.system(ffmpegcommand)
     print("cleaning cache")
